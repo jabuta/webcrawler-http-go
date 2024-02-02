@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -36,7 +38,9 @@ func getLinksOnPage(url string) ([]string, error) {
 			token := z.Token()
 			if "a" == token.Data {
 				for _, attr := range token.Attr {
-					if attr.Key == "href" {
+					if attr.Key == "href" &&
+						attr.Val[0:1] != "#" &&
+						!strings.Contains(attr.Val, "cdn-cgi") {
 						links = append(links, attr.Val)
 					}
 				}
@@ -48,10 +52,20 @@ func getLinksOnPage(url string) ([]string, error) {
 func parseLinks(links []string, root string) []string {
 	var newLinks []string
 	for _, link := range links {
+		fullLink := link
 		if link[0:1] == "/" {
-			fullLink := root + link
-			newLinks = append(newLinks, fullLink)
+			fullLink = root + link
 		}
+		u, err := url.Parse(fullLink)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			fmt.Printf("%v is not a proper URL\n", fullLink)
+			continue
+		} else if u.Host != root {
+			fmt.Printf("%v is not an internal link\n", fullLink)
+			continue
+		}
+		newLinks = append(newLinks, u.Scheme+"://"+u.Host+u.Path)
+
 	}
 	return newLinks
 }
