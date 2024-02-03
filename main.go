@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 )
@@ -98,10 +99,14 @@ func normaliseLinks(links []string, root url.URL) []string {
 	return normLinks
 }
 
-func crawlSite(linksToCrawl []string, crawledLinks map[string]int, root url.URL) {
+func crawlSite(linksToCrawl []string, crawledLinks map[string]int, root url.URL, mu *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
+	
 	for _, link := range linksToCrawl {
+		mu.Lock()
 		if _, ok := crawledLinks[link]; ok {
 			crawledLinks[link]++
+			mu.Unlock()
 			continue
 		}
 		if len(linksToCrawl) == 1 {
@@ -109,13 +114,16 @@ func crawlSite(linksToCrawl []string, crawledLinks map[string]int, root url.URL)
 		} else {
 			crawledLinks[link] = 1
 		}
+		mu.Unlock()
 		linksToParse, err := getLinksOnPage(link)
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
 		parsedLinks := normaliseLinks(linksToParse, root)
-		crawlSite(parsedLinks, crawledLinks, root)
+
+		wg.Add(1)
+		go crawlSite(parsedLinks, crawledLinks, root, mu, wg)
 	}
 }
 
@@ -128,12 +136,23 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
+
+	
 	linksToCrawl := normaliseLinks([]string{rootURLString}, *rootURL)
-	crawlSite(linksToCrawl, crawledLinks, *rootURL)
+	
+	mu := &sync.Mutex{}
+	
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	crawlSite(linksToCrawl, crawledLinks, *rootURL, mu, &wg)
+	wg.Wait()
 
 	sortedLinks := sortLinks(crawledLinks)
 	for _, linkInfo := range sortedLinks {
 		fmt.Printf("%s has %v instances\n", linkInfo.link, linkInfo.count)
 	}
+	
 
 }
